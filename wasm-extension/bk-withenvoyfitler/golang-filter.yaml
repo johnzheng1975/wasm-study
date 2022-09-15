@@ -1,0 +1,43 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  creationTimestamp: "2022-09-02T06:50:18Z"
+  generation: 1
+  name: golang-filter
+  namespace: default
+  resourceVersion: "64820568"
+  uid: 7b3d328c-5d4d-452a-9e51-ddd4b1df8693
+spec:
+  configPatches:
+  - applyTo: HTTP_FILTER
+    match:
+      context: SIDECAR_INBOUND
+      listener:
+        filterChain:
+          filter:
+            name: envoy.http_connection_manager
+            subFilter:
+              name: envoy.router
+    patch:
+      operation: INSERT_BEFORE
+      value:
+        name: envoy.filters.http.wasm
+        typed_config:
+          '@type': type.googleapis.com/udpa.type.v1.TypedStruct
+          type_url: type.googleapis.com/envoy.extensions.filters.http.wasm.v3.Wasm
+          value:
+            config:
+              configuration:
+                '@type': type.googleapis.com/google.protobuf.StringValue
+                value: '{"name": "John", "range": "whole"}'
+              vm_config:
+                code:
+                  local:
+                    filename: /var/local/wasm/http-filter.wasm
+                configuration:
+                  '@type': type.googleapis.com/google.protobuf.StringValue
+                  value: '{"name": "Anna", "range": "vm"}'
+                runtime: envoy.wasm.runtime.v8
+  workloadSelector:
+    labels:
+      app: httpbin
