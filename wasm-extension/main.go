@@ -1,127 +1,58 @@
+// Copyright 2020-2021 Tetrate
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package main
 
 import (
-    "github.com/tetratelabs/proxy-wasm-go-sdk/proxywasm"
-    "github.com/tetratelabs/proxy-wasm-go-sdk/proxywasm/types"
-    "github.com/valyala/fastjson"
-    "encoding/binary"
+	"github.com/tetratelabs/proxy-wasm-go-sdk/proxywasm"
+	"github.com/tetratelabs/proxy-wasm-go-sdk/proxywasm/types"
 )
 
 func main() {
-    proxywasm.SetVMContext(&vmContext{})
+	proxywasm.SetVMContext(&vmContext{})
 }
 
-const (
-  sharedDataKey                 = "my_key"
-  sharedDataInitialValue uint64 = 1
-)
+type vmContext struct{}
 
-
-type vmContext struct {
-    // Embed the default VM context here,
-    // so that we don't need to reimplement all the methods.
-    types.DefaultVMContext
-}
-
-// Override types.VMContext.
 func (*vmContext) OnVMStart(vmConfigurationSize int) types.OnVMStartStatus {
-  initialValueBuf := make([]byte, 8)
-  binary.LittleEndian.PutUint64(initialValueBuf, sharedDataInitialValue) // 
-  if err := proxywasm.SetSharedData(sharedDataKey, initialValueBuf, 0); err != nil {
-    proxywasm.LogWarnf("error setting shared data on OnVMStart: %v", err)
-  }
-  proxywasm.LogInfof("[wasm-extension]: Setting initial shared value %v", sharedDataInitialValue)
-  return types.OnVMStartStatusOK
+	data, err := proxywasm.GetVMConfiguration()
+	if err != nil {
+		proxywasm.LogCriticalf("error reading vm configuration: %v", err)
+	}
+
+	proxywasm.LogInfof("vm config: %s", string(data))
+	return types.OnVMStartStatusOK
 }
 
-
-func (ctx *httpContext) incrementData() (uint64, error) {
-  value, cas, err := proxywasm.GetSharedData(sharedDataKey) // 
-  if err != nil {
-    proxywasm.LogWarnf("error getting shared data: %v", err)
-    return 0, err
-  }
-
-  buf := make([]byte, 8)
-  ret := binary.LittleEndian.Uint64(value) + 1 // 
-  binary.LittleEndian.PutUint64(buf, ret)
-  if err := proxywasm.SetSharedData(sharedDataKey, buf, cas); err != nil { // 
-    proxywasm.LogWarnf("error setting shared data: %v", err)
-    return 0, err
-  }
-  return ret, err
+// Implement types.VMContext.
+func (*vmContext) NewPluginContext(uint32) types.PluginContext {
+	return &pluginContext{}
 }
-
-
-// Override types.DefaultVMContext.
-
-func (*vmContext) NewPluginContext(contextID uint32) types.PluginContext {
-    return &pluginContext{contextID: contextID, additionalHeaders: map[string]string{}, helloHeaderCounter: proxywasm.DefineCounterMetric("hello_header_counter")}
-}
-
 
 type pluginContext struct {
-    // Embed the default plugin context here,
-    // so that we don't need to reimplement all the methods.
-    types.DefaultPluginContext
-    additionalHeaders map[string]string
-    contextID         uint32
-    helloHeaderCounter proxywasm.MetricCounter
+	// Embed the default plugin context here,
+	// so that we don't need to reimplement all the methods.
+	types.DefaultPluginContext
 }
-
 
 // Override types.DefaultPluginContext.
-func (ctx *pluginContext) NewHttpContext(contextID uint32) types.HttpContext {
-  return &httpContext{contextID: contextID, additionalHeaders: ctx.additionalHeaders, helloHeaderCounter: ctx.helloHeaderCounter}
+func (ctx pluginContext) OnPluginStart(pluginConfigurationSize int) types.OnPluginStartStatus {
+	data, err := proxywasm.GetPluginConfiguration()
+	if err != nil {
+		proxywasm.LogCriticalf("error reading plugin configuration: %v", err)
+	}
+
+	proxywasm.LogInfof("plugin config: %s", string(data))
+	return types.OnPluginStartStatusOK
 }
-
-
-type httpContext struct {
-    // Embed the default http context here,
-    // so that we don't need to reimplement all the methods.
-    types.DefaultHttpContext
-    contextID uint32
-    additionalHeaders map[string]string
-    helloHeaderCounter proxywasm.MetricCounter
-}
-
-func (ctx *pluginContext) OnPluginStart(pluginConfigurationSize int) types.OnPluginStartStatus {
-  data, err := proxywasm.GetPluginConfiguration() // 
-  if err != nil {
-    proxywasm.LogCriticalf("error reading plugin configuration: %v", err)
-  }
-
-  var p fastjson.Parser
-  v, err := p.ParseBytes(data)
-  if err != nil {
-    proxywasm.LogCriticalf("error parsing configuration: %v", err)
-  }
-
-  obj, err := v.Object()
-  if err != nil {
-    proxywasm.LogCriticalf("error getting object from json value: %v", err)
-  }
-
-  obj.Visit(func(k []byte, v *fastjson.Value) {
-    ctx.additionalHeaders[string(k)] = string(v.GetStringBytes()) // 
-  })
-
-  return types.OnPluginStartStatusOK
-}
-
-
-
-func (ctx *httpContext) OnHttpRequestHeaders(numHeaders int, endOfStream bool) types.Action {
-  proxywasm.LogInfo("OnHttpRequestHeaders")
-
-  _, err := proxywasm.GetHttpRequestHeader("hello") // 
-  if err != nil {
-    // Ignore if header is not set
-    return types.ActionContinue
-  }
-
-  ctx.helloHeaderCounter.Increment(1) // 
-  proxywasm.LogInfo("hello_header_counter incremented")
-  return types.ActionContinue
-}
-
