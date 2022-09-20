@@ -7,13 +7,14 @@ spec:
   selector:
     matchLabels:
       app: httpbin
-  url: oci://johnzheng/wasmws:v1
+  url: oci://johnzheng/wasmws:v2
   pluginConfig:
     header_1: "some_value_1"
     header_2: "another_value"
   vmConfig:
     env:
+    - name: TRUST_DOMAIN
+      value: "cluster1.local1"
     - name: POD_NAME
       valueFrom: HOST
-    - name: TRUST_DOMAIN
-      value: "cluster.local"
+
