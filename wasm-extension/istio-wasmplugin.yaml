@@ -11,4 +11,9 @@ spec:
   pluginConfig:
     header_1: "some_value_1"
     header_2: "another_value"
-
+  vmConfig:
+    env:
+    - name: POD_NAME
+      valueFrom: HOST
+    - name: TRUST_DOMAIN
+      value: "cluster.local"
